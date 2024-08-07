@@ -174,13 +174,3 @@ server.listen(PORT, () => {
 // Connect to the database
 connectDB();
 
-// Handle Uncaught Exceptions and Promise Rejections
-process.on('uncaughtException', (error) => {
-  logger.error(`Uncaught Exception: ${error.message}`);
-  console.error('Uncaught Exception:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
