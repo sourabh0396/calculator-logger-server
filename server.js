@@ -57,6 +57,7 @@ const calculatorLogSchema = new mongoose.Schema({
   isValid: { type: Boolean, required: true },
   output: { type: Number, required: true },
   createdOn: { type: Date, default: Date.now },
+  status: { type: String, default: 'pending' } // Add status field
 });
 
 const CalculatorLog = mongoose.model('CalculatorLog', calculatorLogSchema);
@@ -159,10 +160,51 @@ app.get('/api/logs', handleDbOperation(async (req, res) => {
   res.json(logs);
 }));
 
-app.get('/', (req, res) => {
-  res.send('Hello from the Calculator Log API!');
-  logger.info('Served root endpoint');
-});
+// GET /api/long-polling/logs - Long polling for logs
+app.get('/api/long-polling/logs', handleDbOperation(async (req, res) => {
+  const sinceId = req.query.since_id;
+  let query = {};
+  if (sinceId) {
+    query = { _id: { $gt: sinceId } };
+  }
+
+  // Function to send logs when available
+  const sendLogs = async () => {
+    const logs = await CalculatorLog.find(query).sort({ createdOn: -1 }).limit(10).exec();
+    if (logs.length > 0) {
+      logger.info('Successfully retrieved logs for long polling');
+      return res.json(logs);
+    }
+    return null;
+  };
+
+  // Check for new logs every 2 seconds
+  const interval = setInterval(async () => {
+    const logsAvailable = await sendLogs();
+    if (logsAvailable) {
+      clearInterval(interval);
+    }
+  }, 2000);
+
+  // Clear interval and respond when request times out after 30 seconds
+  setTimeout(() => {
+    clearInterval(interval);
+    res.status(204).end(); // No content
+  }, 30000);
+}));
+
+// GET /api/bulk-logs - Fetch and update all pending logs in bulk after five executions
+app.get('/api/bulk-logs', handleDbOperation(async (req, res) => {
+  // Fetch pending logs and update them as completed
+  const logs = await CalculatorLog.find({ status: 'pending' }).limit(5).exec();
+  if (logs.length === 5) {
+    // Update status of logs to 'completed'
+    await CalculatorLog.updateMany({ _id: { $in: logs.map(log => log._id) } }, { status: 'completed' });
+    res.json(logs);
+  } else {
+    res.status(204).end(); // No content
+  }
+}));
 
 // Start the server
 const PORT = process.env.PORT || 5000;
@@ -173,4 +215,3 @@ server.listen(PORT, () => {
 
 // Connect to the database
 connectDB();
-
